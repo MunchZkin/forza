@@ -3,10 +3,16 @@ classdef telemetry < handle
     %   Detailed explanation goes here
 
     properties
+        udpPortNumber double
+        udpObj udpport.byte.UDPPort
+        rate rateControl
+    end
+
+    properties
         data
         bin_data char
     end
-    
+
     properties
         % Sled Properties
         IsRaceOn int32 
@@ -86,36 +92,51 @@ classdef telemetry < handle
         LastLap single
         CurrentLap single
         CurrentRaceTime single
-        LapNumber uint16 
-        RacePosition uint8 
-        Accel uint8 
-        Brake uint8 
-        Clutch uint8 
-        HandBrake uint8 
-        Gear uint8 
-        Steer int8 
-        NormalizedDrivingLine int8 
-        NormalizedAIBrakeDifference int8 
-
-        % Additional Properties
-        TireWearFrontLeft single
-        TireWearFrontRight single
-        TireWearRearLeft single
-        TireWearRearRight single
-        TrackOrdinal int32 
+        LapNumber uint16
+        RacePosition uint8
+        Accel uint8
+        Brake uint8
+        Clutch uint8
+        HandBrake uint8
+        Gear uint8
+        Steer int8
+        NormalizedDrivingLine int8
+        NormalizedAIBrakeDifference int8
     end
     
     methods
-        function obj = telemetry(data)
-            obj.data = data;
-            obj.bin_data = dec2bin(data);
-            obj.update_data();
+        function obj = telemetry(varargin)
+            obj.udpPortNumber = 58300;
+            obj.rate = rateControl(60);
+            if numel(varargin) == 2
+                obj.udpPortNumber = varargin{1};
+                obj.rate = rateControl(varargin{2});
+            elseif numel(varargin) == 1
+                obj.udpPortNumber = varargin{1};
+            end
+            obj.udpObj = udpport("LocalPort",obj.udpPortNumber,"EnablePortSharing",true,"Timeout",10);            
+        end
+
+        function stream(obj)
+            reset(obj.rate);
+            flush(obj.udpObj);
+            while true
+                flushinput(obj.udpObj); % debug
+                data_ = read(obj.udpObj, 324, "uint8");
+                obj.data = [data_(1:232),data_(245:324)];
+                obj.bin_data = dec2bin(obj.data);
+                obj.update_data;
+                fprintf('race: %1.1f\ttime: %8.1f\tAccel: %5.2f\tbrake: %5.2f\tsteer: %5.2f\n',obj.IsRaceOn, obj.TimestampMS,obj.Accel(1),obj.Brake(1), obj.Steer(1));
+                waitfor(obj.rate);
+            end
         end
 
         function update_data(obj)
-            props = properties(obj);
+            props_ = properties(obj);
+            index = find(strcmp(props_, 'IsRaceOn'));
+            props = props_(index:end);
             byte_idx = 0;
-            for idx = 3:1:(height(props)-5)
+            for idx = 1:1:height(props)
                 obj.(props{idx}) = double.empty;
                 parameter_type = class(obj.(props{idx}));
                 switch parameter_type
@@ -142,8 +163,7 @@ classdef telemetry < handle
                     otherwise
                         disp(parameter_type)
                         error('Unknown type bvc!');
-                end 
-                
+                end                
                 bin_array = char.empty;
                 for temp_sz = sz:-1:1
                     bin_array = append(bin_array,obj.bin_data(temp_sz + byte_idx,:));
@@ -154,7 +174,3 @@ classdef telemetry < handle
         end
     end
 end
-
-
-
-
